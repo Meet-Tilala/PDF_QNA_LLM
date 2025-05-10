@@ -4,6 +4,14 @@
 
 A Streamlit-based application that allows you to upload PDF documents and ask natural language questions about their content. Built using embedding-based retrieval (via ChromaDB) and OpenAI's LLMs.
 
+Powered by a combination of:
+
+- **Text extraction** and **chunking** from PDFs
+- **Semantic embedding** using `sentence-transformers`
+- **Vector-based retrieval** with ChromaDB
+- **Natural language responses** using OpenAI's GPT models
+
+All through a **Streamlit** interface designed for ease of use.
 ---
 
 ## Features
@@ -71,3 +79,22 @@ OPENAI_API_KEY=your_openai_api_key_here
 streamlit run frontend.py
 ```
 
+
+##  Contact
+
+Made by Meet Tilala.
+
+For questions, suggestions, or collaboration:
+- GitHub: [@thatswhatmeetcoded](https://github.com/thatswhatmeetcoded)
+- Email: meettilala2005@gmail.com
+
+Feel free to open an issue or submit a PR if you’d like to contribute!
+
+---
+
+##  Acknowledgements
+
+- [Streamlit](https://streamlit.io/) – for rapid UI development
+- [ChromaDB](https://www.trychroma.com/) – for fast vector search
+- [SentenceTransformers](https://www.sbert.net/) – for semantic embeddings
+- [OpenAI](https://platform.openai.com/) – for powerful LLMs
