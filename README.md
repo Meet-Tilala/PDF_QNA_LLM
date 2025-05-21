@@ -2,7 +2,7 @@
 
 ## PDF-QA: Question Answering System for PDFs
 
-A Streamlit-based application that allows you to upload PDF documents and ask natural language questions about their content. Built using embedding-based retrieval (via ChromaDB) and OpenAI's LLMs.
+A Streamlit-based application that allows you to upload PDF documents and ask natural language questions about their content. Built using embedding-based retrieval (via ChromaDB) and OpenAI's LLMs. For a working demo of this project, check out <a href="https://github.com/Meet-Tilala/PDF_QNA_LLM/blob/main/Demo%20Video.mp4">Demo Video</a>
 
 Powered by a combination of:
 
