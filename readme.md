@@ -381,18 +381,6 @@ g++ q3_selective_repeat.cpp -o q3
 | Implementation complexity | Simple | Moderate | Complex |
 | Real-world example | Basic modems | Older TCP | Modern TCP / Wi-Fi |
 
-### Efficiency Formula
-
-The **channel utilization** (fraction of time the sender is actually sending) is:
-
-```
-Stop-and-Wait:   U = 1 / (1 + 2a)          where a = propagation delay / transmission time
-Go-Back-N:       U = N / (1 + 2a)           if N ≥ 1 + 2a, else same as Stop-and-Wait
-Selective Repeat: U = N / (1 + 2a)          same formula but wastes no retransmissions
-```
-
-For a satellite link where `a = 50` (very high latency), Stop-and-Wait utilization drops to ~1%. Go-Back-N and Selective Repeat with large windows recover most of that lost throughput.
-
 ---
 
 *Lab 6 — Computer Networks | ARQ Protocol Simulation in C++*
