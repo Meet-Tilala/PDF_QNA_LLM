@@ -1,7 +1,6 @@
 #  Reliable Data Transfer — ARQ Protocols
-### CN Lab 6 | C++ Simulation Suite
+### CN Lab 6 | B23CS1036
 
-> *Three pillars of reliable communication — Stop-and-Wait, Go-Back-N, and Selective Repeat — implemented from scratch in C++.*
 
 ---
 
