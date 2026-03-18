@@ -378,7 +378,7 @@ g++ q3_selective_repeat.cpp -o q3
 | Sequence number bits needed | 1 | ≥ log₂(N+1) | ≥ log₂(2N) |
 | On frame error, retransmit | 1 frame | All from error onward | Only the lost frame |
 | Receiver buffer required | No | No | Yes |
-| Bandwidth efficiency | 1/5 | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| Bandwidth efficiency | 1/5 | 3/5 | 5/5 |
 | Implementation complexity | Simple | Moderate | Complex |
 | Real-world example | Basic modems | Older TCP | Modern TCP / Wi-Fi |
 
