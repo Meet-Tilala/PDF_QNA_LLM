@@ -1,5 +1,5 @@
-#  Reliable Data Transfer — ARQ Protocols
-### CN Lab 6 | B23CS1036
+#  CN Lab 6 - B23CS1036
+### ARQ Protocols 
 
 
 ---
