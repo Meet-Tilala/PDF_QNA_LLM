@@ -383,4 +383,3 @@ g++ q3_selective_repeat.cpp -o q3
 
 ---
 
-*Lab 6 — Computer Networks | ARQ Protocol Simulation in C++*
