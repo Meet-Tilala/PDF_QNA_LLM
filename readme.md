@@ -1,385 +1,412 @@
-#  CN Lab 6 - B23CS1036
-### ARQ Protocols 
-
+#  CN Lab 1 — Socket Programming
+B23CS1036 - Meet Tilala
 
 ---
 
-##  Table of Contents
+## Table of Contents
 
 1. [Overview](#overview)
-2. [What is ARQ?](#what-is-arq)
-3. [Q1 — Stop-and-Wait ARQ](#q1--stop-and-wait-arq)
-4. [Q2 — Go-Back-N ARQ](#q2--go-back-n-arq)
-5. [Q3 — Selective Repeat ARQ](#q3--selective-repeat-arq)
-6. [How to Compile & Run](#how-to-compile--run)
-7. [Protocol Comparison](#protocol-comparison)
+2. [Concepts](#concepts)
+3. [Question 1 — One-to-One Chat](#question-1--one-to-one-chat-application)
+4. [Question 2 — Group Chat](#question-2--multi-client-group-chat-application)
+5. [How to Run](#how-to-run)
+6. [Architecture Diagrams](#architecture-diagrams)
+7. [Code Walkthrough](#code-walkthrough)
+8. [Common Errors & Fixes](#common-errors--fixes)
 
 ---
 
 ## Overview
 
-This lab implements three classic **Automatic Repeat reQuest (ARQ)** protocols that form the backbone of reliable data communication in real-world networks (TCP, Wi-Fi, Bluetooth, satellite links). Each protocol simulates:
+This lab implements two **real-time terminal chat applications** using Python's `socket` library — the same low-level building block that powers every web browser, messaging app, and server on the planet.
 
--  Frame transmission with sequence numbers
--  Random packet/ACK loss using `rand()`
--  Retransmission logic specific to each protocol
--  Console output showing every transmission event
+| | Q1 — One-to-One Chat | Q2 — Group Chat |
+|---|---|---|
+| **Type** | Peer-to-peer (1 server ↔ 1 client) | Multi-client (1 server ↔ N clients) |
+| **Protocol** | TCP (`SOCK_STREAM`) | TCP (`SOCK_STREAM`) |
+| **Concurrency** | 2 threads per side | 1 thread per client (server-side) |
+| **Port** | `5000` | `6000` |
+| **Termination** | `exit` / `quit` | `exit` / `quit` |
 
----
-
-## What is ARQ?
-
-When data travels across a network, packets can be **lost, corrupted, or delayed**. ARQ protocols handle this by:
-
-1. The **sender** transmits a frame and starts a timer
-2. The **receiver** sends back an **ACK** (acknowledgement) if the frame arrives correctly
-3. If no ACK is received before the timer expires → the sender **retransmits**
-
-Three generations of ARQ exist, each smarter than the last:
-
-```
-Generation 1 ──────► Stop-and-Wait      (send 1, wait, repeat)
-Generation 2 ──────► Go-Back-N          (send window, on error rewind all)
-Generation 3 ──────► Selective Repeat   (send window, on error retransmit only lost)
-```
 
 ---
 
-## Q1 — Stop-and-Wait ARQ
+## Concepts
 
-###  Concept
+###  What is a Socket?
 
-The simplest ARQ protocol. The sender transmits **exactly one frame**, then halts and waits for an ACK before moving on.
-
-```
-Sender                          Receiver
-  │                                │
-  │──── Frame 0 ──────────────────►│
-  │                                │◄── processes frame
-  │◄─── ACK 0 ─────────────────────│
-  │                                │
-  │──── Frame 1 ──────────────────►│
-  │         ✗ ACK lost             │
-  │                                │
-  │──── Frame 1 (retry) ──────────►│  ← retransmit same frame
-  │◄─── ACK 1 ─────────────────────│
-  │                                │
-```
-
-###  Key Design Decisions
-
-| Feature | Detail |
-|---|---|
-| Sequence numbers | Only **0 and 1** — alternating (1-bit sequence space) |
-| Window size | Always **1** frame |
-| Retransmit trigger | ACK not received (simulated as random loss) |
-| Loss simulation | `rand() % 10 < 3` → ~30% loss chance |
-
-###  Code Walkthrough
-
-```cpp
-// The entire protocol logic fits in one elegant loop:
-
-int seqNum = 0;                         // Start with frame 0
-
-for (int i = 0; i < totalFrames; i++) {
-    bool ackReceived = false;
-
-    while (!ackReceived) {              // Keep retrying until ACK arrives
-        cout << "Sending Frame " << seqNum << endl;
-
-        if (isACKReceived()) {          // Random simulation of ACK delivery
-            cout << "ACK received for Frame " << seqNum << endl;
-            ackReceived = true;
-        } else {
-            cout << "ACK lost! Retransmitting Frame " << seqNum << endl;
-        }
-    }
-
-    seqNum = 1 - seqNum;               // Toggle: 0→1→0→1 (bit flip trick)
-}
-```
-
-**The bit-flip trick** `seqNum = 1 - seqNum` elegantly alternates between 0 and 1 without any `if` statement.
-
-**Why only 0 and 1?** Since only one frame is ever "in flight," you only need to distinguish the current frame from the previous one — 1 bit is sufficient.
-
-###  Sample Output
+A **socket** is an endpoint for two-way communication between two programs over a network. Think of it as a **telephone** — one side calls (client), the other picks up (server), and they talk.
 
 ```
-Sending Frame 0
-ACK received for Frame 0
-
-Sending Frame 1
-ACK lost! Retransmitting Frame 1
-
-Sending Frame 1
-ACK received for Frame 1
-
-Sending Frame 0
-ACK received for Frame 0
-
-Transmission Completed
+Client Socket  ←——— TCP Connection ———→  Server Socket
+  (connects)                               (listens & accepts)
 ```
 
-###  Limitation
+Python exposes this via the `socket` module:
 
-Stop-and-Wait is **extremely inefficient** on high-latency links. If a network has 100ms round-trip time, the sender is idle for 100ms after every single frame — leading to very low channel utilization. This directly motivated the sliding window protocols below.
-
----
-
-## Q2 — Go-Back-N ARQ
-
-###  Concept
-
-The sender maintains a **sliding window** of `N` frames and can transmit all of them without waiting for individual ACKs. But if *any* frame fails — **all frames from that point onward** are retransmitted.
-
-```
-Window Size = 4
-
-Sender                              Receiver
-  │                                    │
-  │──── Frame 0 ──────────────────────►│ ✓ ACK 0
-  │──── Frame 1 ──────────────────────►│ ✓ ACK 1
-  │──── Frame 2 ──────────────────────►│ ✗ ERROR at Frame 2
-  │──── Frame 3 ──────────────────────►│ ✗ discarded (2 not received yet)
-  │                                    │
-  │  ◄─── Go Back to Frame 2! ─────────│
-  │                                    │
-  │──── Frame 2 ──────────────────────►│ ✓ ACK 2
-  │──── Frame 3 ──────────────────────►│ ✓ ACK 3
-  │──── Frame 4 ──────────────────────►│ ✓ ACK 4
-  │──── Frame 5 ──────────────────────►│ ✓ ACK 5
+```python
+import socket
+s = socket.socket(socket.AF_INET,   # Address Family: IPv4
+                  socket.SOCK_STREAM) # Type: TCP (reliable, ordered)
 ```
 
-###  Key Design Decisions
-
-| Feature | Detail |
-|---|---|
-| Window size | User-defined (e.g., 4) |
-| Sequence numbers | `0` to `totalFrames - 1` |
-| On error at frame `k` | Retransmit frames `k, k+1, ..., end of window` |
-| Window advance | Only when ALL frames in the window are ACKed |
-
-###  Code Walkthrough
-
-```cpp
-int base = 0;   // The leftmost unacknowledged frame (start of window)
-
-while (base < totalFrames) {
-    int end = min(base + windowSize, totalFrames);  // Right edge of window
-
-    // ── TRANSMIT entire window at once ──
-    cout << "Sending Frames:";
-    for (int i = base; i < end; i++)
-        cout << " " << i;
-
-    // ── SIMULATE ACK reception, frame by frame ──
-    int errorFrame = -1;
-    for (int i = base; i < end; i++) {
-        if (hasError()) {
-            errorFrame = i;           // Mark where the error struck
-            cout << "Error occurred at frame " << i << endl;
-            break;                    // Stop processing further ACKs
-        } else {
-            cout << "ACK received for frame " << i << endl;
-        }
-    }
-
-    // ── DECISION: slide forward or go back ──
-    if (errorFrame != -1) {
-        cout << "Retransmitting from frame " << errorFrame << endl;
-        base = errorFrame;            // ← The "Go-Back" step
-    } else {
-        base = end;                   // All good — advance the window
-    }
-}
-```
-
-**Key insight:** `base = errorFrame` is the core of Go-Back-N. By resetting `base` to the error point, the next loop iteration automatically rebuilds a window starting from the failed frame — no extra bookkeeping needed.
-
-###  Sample Output
+###  The TCP Socket Lifecycle
 
 ```
-Sending Frames: 0 1 2 3
-
-ACK received for frame 0
-ACK received for frame 1
-Error occurred at frame 2
-
-Retransmitting from frame 2
-
-Sending Frames: 2 3 4 5
-
-ACK received for frame 2
-ACK received for frame 3
-ACK received for frame 4
-ACK received for frame 5
+SERVER                          CLIENT
+  │                               │
+  │  socket()                     │  socket()
+  │  bind(host, port)             │
+  │  listen()                     │
+  │  accept()  ←────────────────  │  connect(host, port)
+  │     │                         │     │
+  │   recv() ←─────────────────── │   send()
+  │   send() ──────────────────→  │   recv()
+  │     │                         │     │
+  │  close()                      │  close()
 ```
 
-###  Limitation
+###  Why Threading?
 
-Go-Back-N wastes bandwidth — if frame 2 fails in a window of 10, frames 3–9 (which arrived fine) are **thrown away** and retransmitted needlessly. Selective Repeat solves this.
-
----
-
-## Q3 — Selective Repeat ARQ
-
-###  Concept
-
-The most sophisticated ARQ. The sender transmits a full window, but the receiver **buffers out-of-order frames** instead of discarding them. Only the **specific lost frame** is retransmitted — not the whole window.
+Without threading, a process can only do **one thing at a time**. If your chat app is waiting to receive a message, it can't send one simultaneously. Threading solves this by running **send** and **receive** in parallel:
 
 ```
-Window Size = 4
-
-Sender                              Receiver
-  │                                    │
-  │──── Frame 0 ──────────────────────►│ ✓ ACK 0  → delivered immediately
-  │──── Frame 1 ──────────────────────►│ ✓ ACK 1  → delivered immediately
-  │──── Frame 2 ──────────────────────►│ ✗ LOST   → (nobody home)
-  │──── Frame 3 ──────────────────────►│ ✓ ACK 3  → buffered (2 is missing)
-  │                                    │
-  │    ◄── timeout for Frame 2 only ───│
-  │                                    │
-  │──── Frame 2 (retry) ──────────────►│ ✓ ACK 2  → delivered
-  │                                    │           → Frame 3 flushed from buffer
-```
-
-###  Key Design Decisions
-
-| Feature | Detail |
-|---|---|
-| Sender window | Tracks which frames are unacknowledged |
-| Receiver window | Accepts and buffers frames **within** window range |
-| `delivered[]` array | Tracks which frames have been in-order delivered |
-| `buffered[]` array | Stores frames received out-of-order |
-| Retransmit trigger | Per-frame timeout — **only the missing frame** |
-| Buffer flush | After retransmitted frame arrives, deliver all consecutive buffered frames |
-
-###  Code Walkthrough
-
-```cpp
-vector<bool> delivered(totalFrames, false);  // Has this frame been delivered in order?
-vector<bool> buffered(totalFrames, false);   // Is this frame waiting in the buffer?
-int base = 0;  // Next expected in-order frame
-
-// On receiving frame i:
-if (i == base) {
-    //  In-order arrival: deliver immediately
-    delivered[i] = true;
-    cout << "Delivering Frame " << i << "\n";
-    base++;
-
-    //  THE KEY: cascade-deliver all consecutive buffered frames
-    while (base < totalFrames && buffered[base]) {
-        cout << "Delivering buffered Frame " << base << "\n";
-        delivered[base] = true;
-        base++;
-    }
-} else {
-    //  Out-of-order: store in buffer, send ACK anyway
-    buffered[i] = true;
-    cout << "Frame " << i << " buffered\n";
-}
-```
-
-**The cascade flush** (`while buffered[base]`) is the heart of Selective Repeat. When the missing piece finally arrives, it triggers a domino effect — all consecutive buffered frames are delivered instantly in order.
-
-### Sample Output
-
-```
-Sender Window: 0 1 2 3
-Sending Frame 0
-Sending Frame 1
-Sending Frame 2
-Sending Frame 3
-
-Receiver:
-Frame 0 received correctly
-ACK 0 sent
-Delivering Frame 0
-
-Frame 1 received correctly
-ACK 1 sent
-Delivering Frame 1
-
-Frame 2 lost during transmission
-
-Frame 3 received (out of order)
-ACK 3 sent
-Frame 3 buffered
-
-Sender timeout for Frame 2
-Retransmitting Frame 2
-
-Receiver:
-Frame 2 received correctly
-ACK 2 sent
-Delivering Frame 2
-Delivering buffered Frame 3
+Main Thread  ──→  reads your keyboard input → sends to peer
+Recv Thread  ──→  listens on socket          → prints incoming messages
 ```
 
 ---
 
-## How to Compile & Run
+## Question 1 — One-to-One Chat Application
+
+###  Files
+
+```
+Q1_chat/
+├── server.py   ← Run this first
+└── client.py   ← Run this second
+```
+
+###  Goal
+
+Two terminals. One server. One client. Both can talk to each other in real time.
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│     Terminal 1      │         │     Terminal 2      │
+│   (server.py)       │◄───────►│   (client.py)       │
+│                     │  TCP    │                     │
+│  Server: Hello!     │         │  Client: Hi there!  │
+│  Client: How are u? │         │  Server: Doing well │
+└─────────────────────┘         └─────────────────────┘
+```
+
+---
+
+## Question 2 — Multi-Client Group Chat Application
+
+###  Files
+
+```
+Q2_group_chat/
+├── server.py   ← Run this first (once)
+└── client.py   ← Run this for each user (multiple terminals)
+```
+
+###  Goal
+
+One central server that acts as a **message hub** — any message from one client is broadcast to all other connected clients.
+
+```
+          ┌────────────┐
+          │   Server   │
+          │  (hub)     │
+          └─────┬──────┘
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+   [Alice]   [Bob]   [Charlie]
+```
+
+When Alice types `"Hello everyone!"` → Server receives it → Broadcasts `"Alice: Hello everyone!"` to Bob and Charlie.
+
+---
+
+## How to Run
 
 ### Prerequisites
 
-| Platform | Requirement |
-|---|---|
-| Linux / macOS | `g++` (usually pre-installed) |
-| Windows | Install [MinGW](https://www.mingw-w.org/) **or** use an IDE like Code::Blocks / Dev-C++ |
+- Python 3.6 or higher
+- Two (or more) terminal windows
+- No additional packages needed
 
-### Step 1 — Compile
+###  Running Question 1 (One-to-One Chat)
 
+**Step 1 — Start the server** (Terminal 1):
 ```bash
-g++ q1_stop_and_wait.cpp  -o q1
-g++ q2_go_back_n.cpp      -o q2
-g++ q3_selective_repeat.cpp -o q3
+cd Q1_chat
+python server.py
+```
+Expected output:
+```
+[Server] Listening on 127.0.0.1:5000 ...
 ```
 
-### Step 2 — Run
-
-**Q1 — Stop-and-Wait:**
+**Step 2 — Connect the client** (Terminal 2):
 ```bash
-./q1
-# Enter number of frames to send: 4
+cd Q1_chat
+python client.py
+```
+Output:
+```
+[Client] Connected to server at 127.0.0.1:5000
+[Client] Type 'exit' or 'quit' to end the chat.
 ```
 
-**Q2 — Go-Back-N:**
-```bash
-./q2
-# Enter total number of frames: 6
-# Enter window size: 4
+**Step 3 — Chat!**
+```
+# Terminal 1 (Server)          # Terminal 2 (Client)
+> Hey, are you there?           Client: Hey, are you there?
+Server: Yes! Loud and clear.  > Yes! Loud and clear.
+> exit                          [Server] Chat ended.
 ```
 
-**Q3 — Selective Repeat:**
-```bash
-./q3
-# Enter total number of frames: 4
-# Enter window size: 4
-```
-
-> **Windows users:** replace `./q1` with `q1.exe`, etc.
-
-###  Notes
-
-- Output is **non-deterministic** by design — each run uses `srand(time(0))` to seed random loss. Run multiple times to observe both successful transmissions and retransmissions.
-- To get a **fixed/reproducible** output for testing, replace `srand(time(0))` with `srand(42)` (or any constant seed).
+**To end the chat:** type `exit` or `quit` on either side.
 
 ---
 
-## Protocol Comparison
+###  Running Question 2 (Group Chat)
 
-| Feature | Stop-and-Wait | Go-Back-N | Selective Repeat |
-|---|:---:|:---:|:---:|
-| Frames in flight at once | 1 | N (window) | N (window) |
-| Sequence number bits needed | 1 | ≥ log₂(N+1) | ≥ log₂(2N) |
-| On frame error, retransmit | 1 frame | All from error onward | Only the lost frame |
-| Receiver buffer required | No | No | Yes |
-| Bandwidth efficiency | 1/5 | 3/5 | 5/5 |
-| Implementation complexity | Simple | Moderate | Complex |
-| Real-world example | Basic modems | Older TCP | Modern TCP / Wi-Fi |
+**Step 1 — Start the server** (Terminal 1):
+```bash
+cd Q2_group_chat
+python server.py
+```
+Output:
+```
+[Server] Group chat server running on 127.0.0.1:6000
+[Server] Waiting for clients...
+```
+
+**Step 2 — Connect Client 1** (Terminal 2):
+```bash
+python client.py
+# Enter username: Alice
+```
+
+**Step 3 — Connect Client 2** (Terminal 3):
+```bash
+python client.py
+# Enter username: Bob
+```
+
+**Step 4 — Connect Client 3** (Terminal 4):
+```bash
+python client.py
+# Enter username: Charlie
+```
+
+**Step 5 — Chat!**
+
+Alice's terminal:
+```
+Enter your username: Alice
+[Client] Joined as 'Alice'. Type 'exit' to leave.
+
+[Server] Bob has joined the chat.
+[Server] Charlie has joined the chat.
+Bob: Hey everyone!
+> Hello Bob!
+Charlie: This is so cool
+```
+
+**To leave:** type `exit` or `quit`.
 
 ---
 
+## Architecture Diagrams
+
+### Q1 — Threading Model
+
+```
+server.py Process
+┌─────────────────────────────────────┐
+│                                     │
+│  Main Thread                        │
+│  ┌──────────────────────────────┐   │
+│  │  input() → send to client    │   │
+│  └──────────────────────────────┘   │
+│                                     │
+│  Recv Thread (daemon)               │
+│  ┌──────────────────────────────┐   │
+│  │  recv() → print "Client: …"  │   │
+│  └──────────────────────────────┘   │
+│                                     │
+└─────────────────────────────────────┘
+           (same structure for client.py)
+```
+
+### Q2 — Server Thread Pool
+
+```
+server.py Process
+┌──────────────────────────────────────────────┐
+│                                              │
+│  Main Thread — accepts new connections       │
+│  ┌─────────┐                                 │
+│  │ accept()│──► spawns new thread per client │
+│  └─────────┘                                 │
+│                                              │
+│  Thread for Alice   Thread for Bob   ...     │
+│  ┌─────────────┐   ┌─────────────┐           │
+│  │ recv()      │   │ recv()      │           │
+│  │ broadcast() │   │ broadcast() │           │
+│  └─────────────┘   └─────────────┘           │
+│                                              │
+│  Shared State: clients = { sock: username }  │
+│  Protected by: threading.Lock()              │
+└──────────────────────────────────────────────┘
+```
+
+---
+
+## Code Walkthrough
+
+### Q1 — `server.py` Explained
+
+```python
+# 1. Create a TCP socket
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# 2. SO_REUSEADDR lets you restart the server without waiting for OS timeout
+server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+# 3. Bind to address — "claim this IP:port"
+server_socket.bind((HOST, PORT))
+
+# 4. Start listening — OS will queue up to 1 pending connection
+server_socket.listen(1)
+
+# 5. Block until a client connects — returns a NEW socket for that client
+conn, addr = server_socket.accept()
+```
+
+> **Key insight:** `accept()` returns a *new* socket (`conn`) dedicated to this client.  
+> The original `server_socket` keeps listening for future connections.
+
+```python
+# 6. Launch a background thread to receive messages concurrently
+recv_thread = threading.Thread(target=receive_messages, args=(conn,), daemon=True)
+recv_thread.start()
+
+# 7. Main thread sends messages (reads from keyboard)
+while True:
+    message = input()
+    conn.send(message.encode('utf-8'))  # Must encode str → bytes
+```
+
+> **Why `daemon=True`?** Daemon threads die automatically when the main thread exits,  
+> preventing the program from hanging if the main loop ends.
+
+---
+
+### Q2 — `server.py` Explained
+
+```python
+# Shared data structure: maps each socket to its username
+clients = {}
+
+# A Lock prevents two threads from modifying `clients` simultaneously
+# (Race condition: two clients disconnect at the exact same moment)
+clients_lock = threading.Lock()
+```
+
+```python
+def broadcast(message, exclude=None):
+    # Send to ALL clients, except the sender themselves
+    with clients_lock:              # Acquire lock — thread-safe access
+        for client_sock in list(clients):   # list() creates a snapshot copy
+            if client_sock == exclude:
+                continue
+            try:
+                client_sock.send(message.encode('utf-8'))
+            except Exception:
+                # Dead connection — clean it up
+                client_sock.close()
+                del clients[client_sock]
+```
+
+```python
+def handle_client(conn, addr):
+    # First recv is always the username (protocol agreement between server & client)
+    username = conn.recv(1024).decode('utf-8').strip()
+
+    with clients_lock:
+        clients[conn] = username            # Register this client
+
+    broadcast(f"{username} has joined.", exclude=conn)
+
+    while True:
+        message = conn.recv(1024).decode('utf-8')
+        if not message or message.lower() in ('exit', 'quit'):
+            break                           # Graceful exit
+        broadcast(f"{username}: {message}", exclude=conn)
+
+    # Cleanup in finally — runs even if an exception occurs
+    with clients_lock:
+        del clients[conn]
+    conn.close()
+    broadcast(f"{username} has left the chat.")
+```
+
+> **Why `list(clients)` in broadcast?**  
+> If a client disconnects while we iterate over `clients`, the dictionary  
+> size changes mid-loop — causing a `RuntimeError`. Converting to a list  
+> first creates a safe snapshot of keys at that moment.
+
+---
+
+### Q2 — `client.py` Explained
+
+```python
+# Username is sent as the very first message — the server expects this
+username = input("Enter your username: ").strip()
+client_socket.send(username.encode('utf-8'))
+
+# Separate thread handles incoming group messages (non-blocking)
+recv_thread = threading.Thread(target=receive_messages, args=(client_socket,), daemon=True)
+recv_thread.start()
+
+# Main thread handles what YOU type
+while True:
+    message = input()
+    client_socket.send(message.encode('utf-8'))
+```
+
+---
+
+## Common Errors & Fixes
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Address already in use` | Previous server process still running | Wait 30s, or kill the old process: `lsof -ti:5000 \| xargs kill` |
+| `Connection refused` | Server not running yet | Start `server.py` before `client.py` |
+| `UnicodeDecodeError` | Binary data received instead of text | Ensure both sides use `.encode('utf-8')` / `.decode('utf-8')` |
+| Messages appear jumbled | `input()` prompt mixed with received text | Known terminal limitation — messages are still delivered correctly |
+| Server thread hangs on exit | Non-daemon threads blocking shutdown | All recv threads use `daemon=True` — this is already handled |
+
+---
+
+## Key Takeaways
+
+- **`socket.socket(AF_INET, SOCK_STREAM)`** creates a TCP socket — reliable, ordered delivery
+- **`bind()` + `listen()` + `accept()`** is the server's handshake sequence
+- **`connect()`** is the client's handshake
+- **`send()` / `recv()`** work on `bytes`, not strings — always encode/decode
+- **Threading** enables simultaneous send + receive (full-duplex communication)
+- **`threading.Lock()`** protects shared data from concurrent modification
+- **`SO_REUSEADDR`** prevents "Address already in use" on server restart
+- **`daemon=True`** ensures background threads don't prevent clean program exit
+
+---
+
+*Lab 1 — Computer Networks | Python Socket Programming*
